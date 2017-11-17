@@ -1,9 +1,24 @@
 'use strict';
 
 // import this library in case you don't use the web worker
+let fileType = require('file-type');
 let GeoTIFF = require("geotiff");
+let Jimp = require("jimp");
+//let piexif = require("piexifjs");
+let EXIFParser = require("exif-parser");
+//let ExifReader = require("exifreader");
+//global.DataView = require('jdataview');
+//let EXIF = require("exif-js");
+//let ExifImage = require('exif').ExifImage;
+//let EXIFParser = require("exif-parser");
+
+/*let getFileType = (file) => {
+    console.log("file:", file);
+}*/
 
 let parse_data = (data) => {
+
+    console.log("\n[georaster] starting parse_data");
 
     try {
 
@@ -13,80 +28,131 @@ let parse_data = (data) => {
 
         let height, no_data_value, width;
 
-        if (data.raster_type === "geotiff") {
+        console.log("got to promise section");
 
-            //console.log("data.raster_type is geotiff");
-            let geotiff = GeoTIFF.parse(data.arrayBuffer);
-            //console.log("geotiff:", geotiff);
+        return new Promise((resolve, reject) => {
+            try {
+                if (data.raster_type === "geotiff") {
 
-            let image = geotiff.getImage();
+                    //console.log("data.raster_type is geotiff");
+                    let geotiff = GeoTIFF.parse(data.arrayBuffer);
+                    //console.log("geotiff:", geotiff);
 
-            let fileDirectory = image.fileDirectory;
+                    let image = geotiff.getImage();
 
-            result.projection = image.getGeoKeys().GeographicTypeGeoKey;
+                    let fileDirectory = image.fileDirectory;
 
-            result.height = height = image.getHeight();
-            result.width = width = image.getWidth();
+                    result.projection = image.getGeoKeys().GeographicTypeGeoKey;
 
-            // https://www.awaresystems.be/imaging/tiff/tifftags/modeltiepointtag.html
-            result.xmin = fileDirectory.ModelTiepoint[3];
-            result.ymax = fileDirectory.ModelTiepoint[4];
+                    result.height = height = image.getHeight();
+                    result.width = width = image.getWidth();
 
-            // https://www.awaresystems.be/imaging/tiff/tifftags/modelpixelscaletag.html
-            result.pixelHeight = fileDirectory.ModelPixelScale[1];
-            result.pixelWidth = fileDirectory.ModelPixelScale[0];
+                    // https://www.awaresystems.be/imaging/tiff/tifftags/modeltiepointtag.html
+                    result.xmin = fileDirectory.ModelTiepoint[3];
+                    result.ymax = fileDirectory.ModelTiepoint[4];
 
-            result.xmax = result.xmin + width * result.pixelWidth;
-            result.ymin = result.ymax - height * result.pixelHeight;
+                    // https://www.awaresystems.be/imaging/tiff/tifftags/modelpixelscaletag.html
+                    result.pixelHeight = fileDirectory.ModelPixelScale[1];
+                    result.pixelWidth = fileDirectory.ModelPixelScale[0];
 
-            result.no_data_value = no_data_value = fileDirectory.GDAL_NODATA ? parseFloat(fileDirectory.GDAL_NODATA) : null;
-            //console.log("no_data_value:", no_data_value);
+                    result.xmax = result.xmin + width * result.pixelWidth;
+                    result.ymin = result.ymax - height * result.pixelHeight;
 
-            result.number_of_rasters = fileDirectory.SamplesPerPixel;
+                    // SRTM can have implicit no data values of 32767 or 32768 without it being tagged as such
+                    result.no_data_value = no_data_value = fileDirectory.GDAL_NODATA ? parseFloat(fileDirectory.GDAL_NODATA) : null;
 
-            result.values = image.readRasters().map(values_in_one_dimension => {
-                let values_in_two_dimensions = [];
-                for (let y = 0; y < height; y++) {
-                    let start = y * width;
-                    let end = start + width;
-                    values_in_two_dimensions.push(values_in_one_dimension.slice(start, end));
+
+                    //console.log("no_data_value:", no_data_value);
+
+                    result.number_of_rasters = fileDirectory.SamplesPerPixel;
+
+                    result.values = image.readRasters().map(values_in_one_dimension => {
+                        let values_in_two_dimensions = [];
+                        for (let y = 0; y < height; y++) {
+                            let start = y * width;
+                            let end = start + width;
+                            values_in_two_dimensions.push(values_in_one_dimension.slice(start, end));
+                        }
+                        //console.log("values_in_two_dimensions:", values_in_two_dimensions);
+                        return values_in_two_dimensions;
+                    });
+                    resolve(result);
+                } else if (data.raster_type === "jpeg") {
+                    console.log("data.raster_type is jpeg");
+                    Jimp.read(data.arrayBuffer, (err, image) => {
+                        console.log("decoded arrayBuffer:", image);
+                        result.height = height = image.bitmap.height;
+                        result.width = width = image.bitmap.width;
+                    });
+                    let parser = EXIFParser.create(data.arrayBuffer);
+                    let exif = parser.parse();
+                    console.log("exif:", exif);
+                    //let exifObj = piexif.load(data.arrayBuffer);
+                    /*parser.enablePointers([true]);
+                    parser.enableBinaryFields([true]);
+                    parser.enableTagNames([true]);
+                    console.log("exist data:", exifObj.tags);
+                    */
+                    //let tags = ExifReader.load(data.arrayBuffer);
+                    //let tags = EXIF.getTag("
+                    //let tags = EXIF.readFromBinaryFile(data.arrayBuffer);
+                    //console.log("tags:", tags);
+
+                    //let arrayBuffer = data.arrayBuffer.buffer.slice(data.arrayBuffer.byteOffset, data.arrayBuffer.byteOffset + data.arrayBuffer.byteLength);
+                    //let sliced = data.arrayBuffer.slice(0, 131072);
+                    /*let sliced = data.arrayBuffer.slice(0, 100).toString();
+                    console.log("sliced:", sliced);
+                    let first = new Uint8Array(sliced).forEach(n => {
+                        console.log("n:", (n).toString(16));
+                    });
+                    let exifData = EXIFParser.create(data.arrayBuffer).parse();
+                    console.log("exifData:", exifData);
+                    console.log("GPSLatitude:", exifData.tags["GPSLatitude"]);
+                //result.xmin = fileDirectory.ModelTiepoint[3];
+                //result.ymax = fileDirectory.ModelTiepoint[4];
+                });
+
+		*/
                 }
-                //console.log("values_in_two_dimensions:", values_in_two_dimensions);
-                return values_in_two_dimensions;
-            });
-        }
-
-        result.maxs = [];
-        result.mins = [];
-        result.ranges = [];
-
-        let max; let min;
-
-        //console.log("starting to get min, max and ranges");
-        for (let raster_index = 0; raster_index < result.number_of_rasters; raster_index++) {
-
-            let rows = result.values[raster_index];
-
-            for (let row_index = 0; row_index < height; row_index++) {
-
-                let row = rows[row_index];
-
-                for (let column_index = 0; column_index < width; column_index++) {
-
-                    let value = row[column_index];
-                    if (value != no_data_value) {
-                        if (typeof min === "undefined" || value < min) min = value;
-                        else if (typeof max === "undefined" || value > max) max = value;
-                    }
-                }
+            } catch (error) {
+                console.error("[georaster] Error parsing raster:", error);
             }
+        }).then(result => {
+            try {
+                result.maxs = [];
+                result.mins = [];
+                result.ranges = [];
 
-            result.maxs.push(max);
-            result.mins.push(min);
-            result.ranges.push(max - min);
-        }
+                let max; let min;
 
-        return result;
+                //console.log("starting to get min, max and ranges");
+                for (let raster_index = 0; raster_index < result.number_of_rasters; raster_index++) {
+
+                    let rows = result.values[raster_index];
+
+                    for (let row_index = 0; row_index < height; row_index++) {
+
+                        let row = rows[row_index];
+
+                        for (let column_index = 0; column_index < width; column_index++) {
+
+                            let value = row[column_index];
+                            if (value != no_data_value) {
+                                if (typeof min === "undefined" || value < min) min = value;
+                                else if (typeof max === "undefined" || value > max) max = value;
+                            }
+                        }
+                    }
+
+                    result.maxs.push(max);
+                    result.mins.push(min);
+                    result.ranges.push(max - min);
+                }
+                return result;
+            } catch (error) {
+                console.error("[georaster] Error calculating maxs, mins and ranges of raster:", error);
+            }
+        });
 
     } catch (error) {
 
@@ -114,11 +180,11 @@ let web_worker_script = `
 
     onmessage = e => {
         //console.error("inside worker on message started with", e); 
-        let data = e.data;
-        let result = parse_data(data);
-        console.log("posting from web wroker:", result);
-        postMessage(result, [result._arrayBuffer]);
-        close();
+        parse_data(e.data).then(result => {
+            console.log("posting from web wroker:", result);
+            postMessage(result, [result._arrayBuffer]);
+            close();
+        });
     }
 `;
 
@@ -127,12 +193,23 @@ class GeoRaster {
     constructor(arrayBuffer) {
         //console.log("starting GeoRaster.constructor with", arrayBuffer.toString());
 
-
-        if (typeof Buffer !== "undefined" && Buffer.isBuffer(arrayBuffer)) {
-            arrayBuffer = arrayBuffer.buffer.slice(arrayBuffer.byteOffset, arrayBuffer.byteOffset + arrayBuffer.byteLength);
+        if (typeof arrayBuffer === "undefined") {
+            throw "[georaster] tried constructing GeoRaster with an undefined ArrayBuffer";
         }
 
-        this.raster_type = "geotiff";
+        this.file_type = fileType(arrayBuffer);
+        console.log("this.file_type:", this.file_type);
+        if (this.file_type.ext === "tif") {
+            this.raster_type = "geotiff";
+            if (typeof Buffer !== "undefined" && Buffer.isBuffer(arrayBuffer)) {
+                arrayBuffer = arrayBuffer.buffer.slice(arrayBuffer.byteOffset, arrayBuffer.byteOffset + arrayBuffer.byteLength);
+            }
+        } else if (this.file_type.ext === "jpg") {
+            this.raster_type = "jpeg";
+            if (typeof Buffer !== "undefined" && Buffer.isBuffer(arrayBuffer)) {
+                //arrayBuffer = arrayBuffer.buffer.slice(arrayBuffer.byteOffset, arrayBuffer.byteOffset + arrayBuffer.byteLength);
+            }
+        } 
         this._arrayBuffer = arrayBuffer;
         this._web_worker_is_available = typeof window !== "undefined" && window.Worker !== "undefined";
         this._blob_is_available = typeof Blob !== "undefined";
@@ -145,7 +222,7 @@ class GeoRaster {
     initialize() {
         return new Promise((resolve, reject) => {
             //console.log("starting GeoRaster.values getter");
-            if (this.raster_type === "geotiff") {
+            if (this.raster_type === "geotiff" || this.raster_type === "jpeg") {
                 if (this._web_worker_is_available) {
                     let url;
                     if (this._blob_is_available) {
@@ -169,10 +246,11 @@ class GeoRaster {
                     //console.log("about to postMessage");
                     worker.postMessage({arrayBuffer: this._arrayBuffer, raster_type: this.raster_type}, [this._arrayBuffer]);
                 } else {
-                    //console.log("web worker is not available");
-                    let result = parse_data({ arrayBuffer: this._arrayBuffer, raster_type: this.raster_type });
-                    //console.log("result:", result);
-                    resolve(result);
+                    console.log("web worker is not available");
+                    parse_data({ arrayBuffer: this._arrayBuffer, raster_type: this.raster_type }).then(result => {
+                        console.log("result:", result);
+                        resolve(result);
+                    });
                 }
             } else {
                 reject("couldn't find a way to parse");
