@@ -1,4 +1,5 @@
-import {fromArrayBuffer} from 'geotiff';
+import { fromArrayBuffer } from 'geotiff';
+import { log } from './logger.js';
 
 function processResult(result, debug) {
   const noDataValue = result.noDataValue;
@@ -12,10 +13,9 @@ function processResult(result, debug) {
 
     let max; let min;
 
-    // console.log("starting to get min, max and ranges");
     for (let rasterIndex = 0; rasterIndex < result.numberOfRasters; rasterIndex++) {
       const rows = result.values[rasterIndex];
-      if (debug) console.log('[georaster] rows:', rows);
+      if (debug) log('rows:', rows);
 
       for (let rowIndex = 0; rowIndex < height; rowIndex++) {
         const row = rows[rowIndex];
@@ -40,10 +40,10 @@ function processResult(result, debug) {
 
 // not using async because running into this error: ReferenceError: regeneratorRuntime is not defined
 export default function parseData(data, debug) {
+  if (debug) log('starting parseData');
   return new Promise((resolve, reject) => {
     try {
-      if (debug) console.log('starting parseData with', data);
-      if (debug) console.log('\tGeoTIFF:', typeof GeoTIFF);
+      if (debug) log('\tGeoTIFF:', typeof GeoTIFF);
 
       const result = {};
 
@@ -67,24 +67,25 @@ export default function parseData(data, debug) {
       } else if (data.rasterType === 'geotiff') {
         result._data = data.data;
 
-        if (debug) console.log('data.rasterType is geotiff');
+        if (debug) log('data.rasterType is geotiff');
         resolve(fromArrayBuffer(data.data).then(geotiff => {
-          if (debug) console.log('geotiff:', geotiff);
+          if (debug) log("fromArrayBuffer succeded");
+          if (debug) log('geotiff:', geotiff);
           return geotiff.getImage().then(image => {
-            if (debug) console.log('image:', image);
+            if (debug) log('image:', image);
 
             const fileDirectory = image.fileDirectory;
 
             const geoKeys = image.getGeoKeys();
 
-            if (debug) console.log('geoKeys:', geoKeys);
+            if (debug) log('geoKeys:', geoKeys);
             result.projection = geoKeys.GeographicTypeGeoKey;
-            if (debug) console.log('projection:', result.projection);
+            if (debug) log('projection:', result.projection);
 
             result.height = height = image.getHeight();
-            if (debug) console.log('result.height:', result.height);
+            if (debug) log('result.height:', result.height);
             result.width = width = image.getWidth();
-            if (debug) console.log('result.width:', result.width);
+            if (debug) log('result.width:', result.width);
 
             const [resolutionX, resolutionY] = image.getResolution();
             result.pixelHeight = Math.abs(resolutionY);
@@ -113,6 +114,9 @@ export default function parseData(data, debug) {
               return processResult(result);
             });
           });
+        })
+        .catch(error => {
+          log("fromArrayBuffer found error:", error);
         }));
       }
     } catch (error) {

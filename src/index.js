@@ -5,10 +5,11 @@
 import Worker from './worker.js';
 
 import parseData from './parseData.js';
+import { log } from './logger.js';
 
 class GeoRaster {
   constructor(data, metadata, debug) {
-    if (debug) console.log('starting GeoRaster.constructor with', data, metadata);
+    if (debug) log('starting GeoRaster.constructor with', data, metadata);
 
     this._web_worker_is_available = typeof window !== 'undefined' && window.Worker !== 'undefined';
     this._blob_is_available = typeof Blob !== 'undefined';
@@ -20,7 +21,7 @@ class GeoRaster {
     }
 
     if (typeof Buffer !== 'undefined' && Buffer.isBuffer(data)) {
-      if (debug) console.log('data is a buffer');
+      if (debug) log('data is a buffer');
       this._data = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
       this.rasterType = 'geotiff';
     } else if (data instanceof ArrayBuffer) {
@@ -32,27 +33,27 @@ class GeoRaster {
       this._metadata = metadata;
     }
 
-    if (debug) console.log('this after construction:', this);
+    if (debug) log('this after construction:', this);
   }
 
 
   initialize(debug) {
     return new Promise((resolve, reject) => {
-      if (debug) console.log('starting GeoRaster.initialize');
-      if (debug) console.log('this', this);
+      if (debug) log('starting GeoRaster.initialize');
+      if (debug) log('this', this);
 
       if (this.rasterType === 'object' || this.rasterType === 'geotiff' || this.rasterType === 'tiff') {
         if (this._web_worker_is_available) {
           const worker = new Worker();
           worker.onmessage = (e) => {
-            console.log('main thread received message:', e);
+            if (debug) log('main thread received message:', e);
             const data = e.data;
             for (const key in data) {
               this[key] = data[key];
             }
             resolve(this);
           };
-          if (debug) console.log('about to postMessage');
+          if (debug) log('about to postMessage');
           if (this._data instanceof ArrayBuffer) {
             worker.postMessage({
               data: this._data,
@@ -67,13 +68,13 @@ class GeoRaster {
             });
           }
         } else {
-          if (debug) console.log('web worker is not available');
+          if (debug) log('web worker is not available');
           parseData({
             data: this._data,
             rasterType: this.rasterType,
             metadata: this._metadata,
-          }).then(result => {
-            if (debug) console.log('result:', result);
+          }, debug).then(result => {
+            if (debug) log('result:', result);
             resolve(result);
           });
         }
@@ -85,7 +86,7 @@ class GeoRaster {
 }
 
 const parseGeoraster = (input, metadata, debug) => {
-  if (debug) console.log('starting parseGeoraster with ', input, metadata);
+  if (debug) log('starting parseGeoraster with ', input, metadata);
 
   if (input === undefined) {
     const errorMessage = '[Georaster.parseGeoraster] Error. You passed in undefined to parseGeoraster. We can\'t make a raster out of nothing!';
